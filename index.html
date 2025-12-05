@@ -637,14 +637,20 @@
             progressEl.style.width = '20%';
 
             try {
-                // Get template from Firebase Storage
-                const templateRef = storage.ref(`assessments/${currentAssessment.id}/template.docx`);
-                const templateUrl = await templateRef.getDownloadURL();
+                // Use the template URL already stored in the assessment record
+                const templateUrl = currentAssessment.templateUrl;
+
+                if (!templateUrl) {
+                    throw new Error('Template URL not found');
+                }
 
                 progressEl.style.width = '40%';
 
                 // Download template
                 const response = await fetch(templateUrl);
+                if (!response.ok) {
+                    throw new Error('Failed to download template');
+                }
                 const templateBlob = await response.blob();
 
                 progressEl.style.width = '60%';
