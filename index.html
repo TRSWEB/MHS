@@ -371,28 +371,40 @@
     </div>
 
     <div class="container">
-        <!-- Step 1: Enter Access Code -->
+        <!-- Step 1: Login -->
         <div id="step1" class="step active">
             <div class="step-title">
                 <span class="step-number">1</span>
-                Enter Your Details
+                Login with School Email
             </div>
 
             <div id="errorMessage" class="error-message"></div>
+            <div id="infoMessage" class="success-message" style="display: none;"></div>
 
             <div class="form-group">
-                <label for="accessCode">Assessment Code</label>
-                <input type="text" id="accessCode" placeholder="Enter the code from your teacher" autocomplete="off">
+                <label for="studentEmail">School Email</label>
+                <input type="email" id="studentEmail" placeholder="your.name@mounthouse.org.uk" autocomplete="email">
             </div>
 
             <div class="form-group">
-                <label for="studentName">Your Full Name</label>
-                <input type="text" id="studentName" placeholder="e.g., John Smith" autocomplete="off">
+                <label for="studentPassword">Password</label>
+                <input type="password" id="studentPassword" placeholder="Enter your password" autocomplete="current-password">
             </div>
 
-            <button class="btn btn-primary" onclick="validateAccess()">
-                Continue
+            <!-- Confirm password field - shown only for first-time setup -->
+            <div class="form-group" id="confirmPasswordGroup" style="display: none;">
+                <label for="confirmPassword">Confirm Password</label>
+                <input type="password" id="confirmPassword" placeholder="Confirm your password" autocomplete="new-password">
+                <p style="font-size: 12px; color: #666; margin-top: 5px;">First time login - create your assessment portal password</p>
+            </div>
+
+            <button class="btn btn-primary" onclick="validateLogin()" id="loginBtn">
+                Login
             </button>
+
+            <p style="margin-top: 15px; font-size: 12px; color: #888; text-align: center;">
+                Use your school email address to access your assessments
+            </p>
         </div>
 
         <!-- Step 2: Download Assessment -->
@@ -516,74 +528,245 @@
             document.getElementById('step' + stepNum).classList.add('active');
         }
 
-        // Validate access code and student name
-        async function validateAccess() {
-            const accessCode = document.getElementById('accessCode').value.trim().toUpperCase();
-            const studentName = document.getElementById('studentName').value.trim();
-            const errorDiv = document.getElementById('errorMessage');
+        // Password hashing utilities
+        async function generateSalt() {
+            const array = new Uint8Array(16);
+            crypto.getRandomValues(array);
+            return Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
+        }
 
-            // Validation
-            if (!accessCode) {
-                showError(errorDiv, 'Please enter your access code');
-                return;
+        async function hashPassword(password, salt) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(password + salt);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        // Check if email exists and has password set
+        let currentStudentAuth = null;
+        let isFirstTimeLogin = false;
+
+        async function checkEmail() {
+            const email = document.getElementById('studentEmail').value.trim().toLowerCase();
+            const errorDiv = document.getElementById('errorMessage');
+            const infoDiv = document.getElementById('infoMessage');
+            const confirmGroup = document.getElementById('confirmPasswordGroup');
+
+            if (!email) {
+                showError(errorDiv, 'Please enter your school email');
+                return null;
             }
-            if (!studentName) {
-                showError(errorDiv, 'Please enter your full name');
-                return;
+
+            // Validate email format
+            if (!email.includes('@')) {
+                showError(errorDiv, 'Please enter a valid email address');
+                return null;
             }
+
+            // Look up student by email in studentAuth collection
+            const authSnapshot = await database.ref('studentAuth').orderByChild('email').equalTo(email).once('value');
+            const authData = authSnapshot.val();
+
+            if (authData) {
+                // Student auth exists
+                const authKey = Object.keys(authData)[0];
+                currentStudentAuth = { id: authKey, ...authData[authKey] };
+
+                if (currentStudentAuth.passwordHash) {
+                    // Has password - normal login
+                    isFirstTimeLogin = false;
+                    confirmGroup.style.display = 'none';
+                    infoDiv.style.display = 'none';
+                } else {
+                    // No password yet - first time setup
+                    isFirstTimeLogin = true;
+                    confirmGroup.style.display = 'block';
+                    infoDiv.textContent = 'First time login - please create your password';
+                    infoDiv.style.display = 'block';
+                }
+                return currentStudentAuth;
+            } else {
+                // New student - check if they're enrolled in any assessment first
+                const assessmentsSnapshot = await database.ref('assessments').once('value');
+                const assessments = assessmentsSnapshot.val();
+
+                let foundStudentName = null;
+                if (assessments) {
+                    for (const [assessmentId, assessment] of Object.entries(assessments)) {
+                        const students = assessment.students || {};
+                        for (const [studentId, studentData] of Object.entries(students)) {
+                            if (studentData.email && studentData.email.toLowerCase() === email) {
+                                foundStudentName = studentData.name;
+                                break;
+                            }
+                        }
+                        if (foundStudentName) break;
+                    }
+                }
+
+                if (foundStudentName) {
+                    // Create auth record for this student
+                    const newAuthRef = database.ref('studentAuth').push();
+                    currentStudentAuth = {
+                        id: newAuthRef.key,
+                        email: email,
+                        name: foundStudentName,
+                        createdAt: new Date().toISOString()
+                    };
+                    await newAuthRef.set(currentStudentAuth);
+
+                    isFirstTimeLogin = true;
+                    confirmGroup.style.display = 'block';
+                    infoDiv.textContent = 'First time login - please create your password';
+                    infoDiv.style.display = 'block';
+                    return currentStudentAuth;
+                }
+
+                // Email not found in any assessment
+                return null;
+            }
+        }
+
+        // Main login validation
+        async function validateLogin() {
+            const email = document.getElementById('studentEmail').value.trim().toLowerCase();
+            const password = document.getElementById('studentPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            const errorDiv = document.getElementById('errorMessage');
+            const loginBtn = document.getElementById('loginBtn');
 
             errorDiv.style.display = 'none';
 
+            if (!email) {
+                showError(errorDiv, 'Please enter your school email');
+                return;
+            }
+            if (!password) {
+                showError(errorDiv, 'Please enter your password');
+                return;
+            }
+
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<span class="loading-spinner"></span>Logging in...';
+
             try {
-                // Get all assessments and search for the access code
+                // Check/get student auth record
+                const authRecord = await checkEmail();
+
+                if (!authRecord) {
+                    showError(errorDiv, 'Email not found. Please use your registered school email.');
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = 'Login';
+                    return;
+                }
+
+                if (isFirstTimeLogin) {
+                    // First time - create password
+                    if (password.length < 6) {
+                        showError(errorDiv, 'Password must be at least 6 characters');
+                        loginBtn.disabled = false;
+                        loginBtn.innerHTML = 'Login';
+                        return;
+                    }
+                    if (password !== confirmPassword) {
+                        showError(errorDiv, 'Passwords do not match');
+                        loginBtn.disabled = false;
+                        loginBtn.innerHTML = 'Login';
+                        return;
+                    }
+
+                    // Hash and save password
+                    const salt = await generateSalt();
+                    const hash = await hashPassword(password, salt);
+
+                    await database.ref(`studentAuth/${currentStudentAuth.id}`).update({
+                        passwordHash: hash,
+                        passwordSalt: salt,
+                        passwordSetAt: new Date().toISOString()
+                    });
+
+                    currentStudentAuth.passwordHash = hash;
+                    currentStudentAuth.passwordSalt = salt;
+
+                } else {
+                    // Verify existing password
+                    const hash = await hashPassword(password, currentStudentAuth.passwordSalt);
+
+                    if (hash !== currentStudentAuth.passwordHash) {
+                        showError(errorDiv, 'Incorrect password. Please try again.');
+                        loginBtn.disabled = false;
+                        loginBtn.innerHTML = 'Login';
+                        return;
+                    }
+                }
+
+                // Login successful - find active assessments for this student
+                await loadStudentAssessments(email, currentStudentAuth.name);
+
+            } catch (error) {
+                console.error('Login error:', error);
+                showError(errorDiv, 'Connection error. Please try again.');
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = 'Login';
+            }
+        }
+
+        // Load assessments for logged-in student
+        async function loadStudentAssessments(email, studentName) {
+            const errorDiv = document.getElementById('errorMessage');
+            const loginBtn = document.getElementById('loginBtn');
+
+            try {
+                // Get all active assessments
                 const snapshot = await database.ref('assessments').once('value');
                 const assessments = snapshot.val();
 
                 if (!assessments) {
                     showError(errorDiv, 'No assessments available.');
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = 'Login';
                     return;
                 }
 
-                // Search through all assessments for this access code
+                // Find assessments where this student is enrolled (match by email or name)
                 let foundAssessment = null;
                 let foundStudentKey = null;
                 let foundStudentData = null;
 
                 for (const [assessmentId, assessment] of Object.entries(assessments)) {
+                    if (assessment.status !== 'active') continue;
+
                     const students = assessment.students || {};
 
                     for (const [studentId, studentData] of Object.entries(students)) {
-                        // Match access code AND verify student name
-                        if (studentData.code === accessCode) {
-                            // Check if student name matches (case-insensitive)
-                            if (studentData.name.toLowerCase() === studentName.toLowerCase()) {
-                                foundAssessment = { id: assessmentId, ...assessment };
-                                foundStudentKey = studentId;
-                                foundStudentData = studentData;
-                                break;
-                            } else {
-                                // Code found but name doesn't match
-                                showError(errorDiv, 'The name you entered does not match the code. Please check your name spelling.');
-                                return;
-                            }
+                        // Match by email first (most reliable)
+                        if (studentData.email && studentData.email.toLowerCase() === email.toLowerCase()) {
+                            foundAssessment = { id: assessmentId, ...assessment };
+                            foundStudentKey = studentId;
+                            foundStudentData = studentData;
+                            break;
+                        }
+                        // Fallback: match by name (case-insensitive)
+                        if (studentData.name && studentName && studentData.name.toLowerCase() === studentName.toLowerCase()) {
+                            foundAssessment = { id: assessmentId, ...assessment };
+                            foundStudentKey = studentId;
+                            foundStudentData = studentData;
+                            break;
                         }
                     }
                     if (foundAssessment) break;
                 }
 
                 if (!foundAssessment) {
-                    showError(errorDiv, 'Invalid access code. Please check with your teacher.');
+                    showError(errorDiv, 'No active assessments found for your account. Contact your teacher if you believe this is an error.');
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = 'Login';
                     return;
                 }
 
                 currentAssessment = foundAssessment;
                 currentStudent = { id: foundStudentKey, ...foundStudentData };
-
-                // Check if assessment is active
-                if (currentAssessment.status !== 'active') {
-                    showError(errorDiv, 'This assessment is not currently active.');
-                    return;
-                }
 
                 // Update UI with assessment info
                 document.getElementById('assessmentTitle').textContent = currentAssessment.title;
@@ -598,8 +781,10 @@
                 showStep(2);
 
             } catch (error) {
-                console.error('Error:', error);
-                showError(errorDiv, 'Connection error. Please try again.');
+                console.error('Error loading assessments:', error);
+                showError(errorDiv, 'Error loading assessments. Please try again.');
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = 'Login';
             }
         }
 
@@ -649,18 +834,22 @@
                 currentStudent.downloaded = true;
                 updateStudentStatus();
 
-                // Direct download - opens the Firebase URL directly (bypasses CORS)
-                window.open(templateUrl, '_blank');
+                // Direct download using anchor click (most reliable method)
+                const a = document.createElement('a');
+                a.href = templateUrl;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
 
-                downloadBtn.innerHTML = '✓ Downloaded';
+                downloadBtn.innerHTML = '✓ Download Started';
                 downloadBtn.classList.remove('btn-success');
                 downloadBtn.classList.add('btn-primary');
                 document.getElementById('continueToUploadBtn').style.display = 'block';
 
-                // Show reminder about filename
-                setTimeout(() => {
-                    alert(`Your assessment is downloading.\n\nIMPORTANT: Save the file with YOUR NAME:\n${currentStudent.name}_${currentAssessment.title}.docx`);
-                }, 500);
+                // Show reminder
+                alert(`Your assessment should be downloading now.\n\nIf it doesn't start, copy this link and paste in browser:\n${templateUrl.substring(0, 80)}...`);
 
             } catch (error) {
                 console.error('Download error:', error);
