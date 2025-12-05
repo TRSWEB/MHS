@@ -1084,12 +1084,22 @@
         });
 
         // Enter key handling
-        document.getElementById('accessCode').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') document.getElementById('studentName').focus();
+        document.getElementById('studentEmail').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') document.getElementById('studentPassword').focus();
         });
 
-        document.getElementById('studentName').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') validateAccess();
+        document.getElementById('studentPassword').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                if (document.getElementById('confirmPasswordGroup').style.display !== 'none') {
+                    document.getElementById('confirmPassword').focus();
+                } else {
+                    validateLogin();
+                }
+            }
+        });
+
+        document.getElementById('confirmPassword').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') validateLogin();
         });
     </script>
 </body>
