@@ -625,16 +625,12 @@
             }
         }
 
-        // Download assessment with personalized header
+        // Download assessment - direct link (no CORS issues)
         async function downloadAssessment() {
             const downloadBtn = document.getElementById('downloadBtn');
-            const progressBar = document.getElementById('downloadProgress');
-            const progressEl = document.getElementById('downloadProgressBar');
 
             downloadBtn.disabled = true;
-            downloadBtn.innerHTML = '<span class="loading-spinner"></span>Preparing your document...';
-            progressBar.style.display = 'block';
-            progressEl.style.width = '20%';
+            downloadBtn.innerHTML = '<span class="loading-spinner"></span>Starting download...';
 
             try {
                 // Use the template URL already stored in the assessment record
@@ -644,35 +640,7 @@
                     throw new Error('Template URL not found');
                 }
 
-                progressEl.style.width = '40%';
-
-                // Download template
-                const response = await fetch(templateUrl);
-                if (!response.ok) {
-                    throw new Error('Failed to download template');
-                }
-                const templateBlob = await response.blob();
-
-                progressEl.style.width = '60%';
-
-                // Personalize the document
-                const personalizedBlob = await personalizeDocument(templateBlob);
-
-                progressEl.style.width = '80%';
-
-                // Trigger download
-                const url = URL.createObjectURL(personalizedBlob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${currentAssessment.title}_${currentStudent.name.replace(/\s+/g, '_')}.docx`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-
-                progressEl.style.width = '100%';
-
-                // Mark as downloaded in database
+                // Mark as downloaded in database FIRST
                 await database.ref(`assessments/${currentAssessment.id}/students/${currentStudent.id}`).update({
                     downloaded: true,
                     downloadedAt: new Date().toISOString()
@@ -681,16 +649,23 @@
                 currentStudent.downloaded = true;
                 updateStudentStatus();
 
+                // Direct download - opens the Firebase URL directly (bypasses CORS)
+                window.open(templateUrl, '_blank');
+
                 downloadBtn.innerHTML = '✓ Downloaded';
                 downloadBtn.classList.remove('btn-success');
                 downloadBtn.classList.add('btn-primary');
                 document.getElementById('continueToUploadBtn').style.display = 'block';
 
+                // Show reminder about filename
+                setTimeout(() => {
+                    alert(`Your assessment is downloading.\n\nIMPORTANT: Save the file with YOUR NAME:\n${currentStudent.name}_${currentAssessment.title}.docx`);
+                }, 500);
+
             } catch (error) {
                 console.error('Download error:', error);
                 downloadBtn.disabled = false;
                 downloadBtn.innerHTML = 'Download My Assessment';
-                progressBar.style.display = 'none';
                 alert('Error downloading assessment. Please try again.');
             }
         }
