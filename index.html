@@ -393,9 +393,8 @@
 
             <!-- Confirm password field - shown only for first-time setup -->
             <div class="form-group" id="confirmPasswordGroup" style="display: none;">
-                <label for="confirmPassword">Confirm Password</label>
-                <input type="password" id="confirmPassword" placeholder="Confirm your password" autocomplete="new-password">
-                <p style="font-size: 12px; color: #666; margin-top: 5px;">First time login - create your assessment portal password</p>
+                <label for="confirmPassword">Type Password Again</label>
+                <input type="password" id="confirmPassword" placeholder="Type your password again" autocomplete="new-password">
             </div>
 
             <button class="btn btn-primary" onclick="validateLogin()" id="loginBtn">
@@ -582,8 +581,7 @@
                     // No password yet - first time setup
                     isFirstTimeLogin = true;
                     confirmGroup.style.display = 'block';
-                    infoDiv.textContent = 'First time login - please create your password';
-                    infoDiv.style.display = 'block';
+                    infoDiv.style.display = 'none';
                 }
                 return currentStudentAuth;
             } else {
@@ -618,8 +616,7 @@
 
                     isFirstTimeLogin = true;
                     confirmGroup.style.display = 'block';
-                    infoDiv.textContent = 'First time login - please create your password';
-                    infoDiv.style.display = 'block';
+                    infoDiv.style.display = 'none';
                     return currentStudentAuth;
                 }
 
@@ -810,12 +807,12 @@
             }
         }
 
-        // Download assessment - direct link (no CORS issues)
+        // Download assessment with custom filename
         async function downloadAssessment() {
             const downloadBtn = document.getElementById('downloadBtn');
 
             downloadBtn.disabled = true;
-            downloadBtn.innerHTML = '<span class="loading-spinner"></span>Starting download...';
+            downloadBtn.innerHTML = '<span class="loading-spinner"></span>Downloading...';
 
             try {
                 // Use the template URL already stored in the assessment record
@@ -834,22 +831,42 @@
                 currentStudent.downloaded = true;
                 updateStudentStatus();
 
-                // Direct download using anchor click (most reliable method)
-                const a = document.createElement('a');
-                a.href = templateUrl;
-                a.target = '_blank';
-                a.rel = 'noopener noreferrer';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
+                // Create proper filename: Assessment_[title].docx
+                const safeTitle = currentAssessment.title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+                const fileName = `Assessment_${safeTitle}.docx`;
 
-                downloadBtn.innerHTML = '✓ Download Started';
+                // Try to fetch and download with custom filename
+                try {
+                    const response = await fetch(templateUrl);
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = fileName;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    } else {
+                        throw new Error('Fetch failed');
+                    }
+                } catch (fetchError) {
+                    // Fallback: direct link if CORS blocks fetch
+                    console.log('Fetch failed, using direct link:', fetchError);
+                    const a = document.createElement('a');
+                    a.href = templateUrl;
+                    a.target = '_blank';
+                    a.rel = 'noopener noreferrer';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }
+
+                downloadBtn.innerHTML = '✓ Downloaded';
                 downloadBtn.classList.remove('btn-success');
                 downloadBtn.classList.add('btn-primary');
                 document.getElementById('continueToUploadBtn').style.display = 'block';
-
-                // Show reminder
-                alert(`Your assessment should be downloading now.\n\nIf it doesn't start, copy this link and paste in browser:\n${templateUrl.substring(0, 80)}...`);
 
             } catch (error) {
                 console.error('Download error:', error);
