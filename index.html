@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MHS Assessment Portal</title>
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
+    <!-- JSZip for DOCX manipulation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <style>
+        :root {
+            --mhs-green: #2B5F3F;
+            --mhs-gold: #F0A500;
+            --mhs-light-green: #4A7C59;
+            --mhs-dark-green: #1A3A2A;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+
+        .school-crest {
+            width: 80px;
+            height: 96px;
+        }
+
+        h1 {
+            color: var(--mhs-green);
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .step {
+            display: none;
+        }
+
+        .step.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .step-title {
+            color: var(--mhs-green);
+            font-size: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .step-number {
+            background: var(--mhs-gold);
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--mhs-green);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: var(--mhs-green);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--mhs-light-green);
+        }
+
+        .btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .btn-success {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #45a049;
+        }
+
+        .btn-warning {
+            background: var(--mhs-gold);
+            color: white;
+        }
+
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .success-message {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .info-card {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .info-card h3 {
+            color: var(--mhs-green);
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .info-card p {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .info-card .value {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .status-downloaded {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .status-submitted {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .status-pending {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 20px;
+        }
+
+        .upload-area:hover {
+            border-color: var(--mhs-green);
+            background: #f9f9f9;
+        }
+
+        .upload-area.dragover {
+            border-color: var(--mhs-green);
+            background: #e8f5e9;
+        }
+
+        .upload-icon {
+            font-size: 40px;
+            margin-bottom: 10px;
+        }
+
+        .file-selected {
+            background: #e8f5e9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .file-selected .filename {
+            font-weight: 600;
+            color: var(--mhs-green);
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .progress-bar .progress {
+            height: 100%;
+            background: var(--mhs-green);
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .instructions {
+            background: #fff3e0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid var(--mhs-gold);
+        }
+
+        .instructions h4 {
+            color: #f57c00;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            color: #666;
+            font-size: 13px;
+        }
+
+        .instructions li {
+            margin-bottom: 5px;
+        }
+
+        .footer {
+            margin-top: 30px;
+            text-align: center;
+            color: #999;
+            font-size: 12px;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #fff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo-container">
+            <svg class="school-crest" viewBox="0 0 200 240" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="goldGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" style="stop-color:#F0A500"/>
+                        <stop offset="100%" style="stop-color:#E09400"/>
+                    </linearGradient>
+                </defs>
+                <path d="M100 10 L170 50 L170 140 Q170 190 100 230 Q30 190 30 140 L30 50 Z" fill="#2B5F3F" stroke="#1A3A2A" stroke-width="4"/>
+                <rect x="40" y="40" width="120" height="30" fill="url(#goldGradient)"/>
+                <polygon points="100,80 40,110 160,110" fill="#2B5F3F"/>
+                <circle cx="100" cy="95" r="5" fill="white"/>
+                <rect x="55" y="120" width="25" height="40" fill="white"/>
+                <rect x="87.5" y="120" width="25" height="40" fill="white"/>
+                <rect x="120" y="120" width="25" height="40" fill="white"/>
+                <text x="100" y="190" text-anchor="middle" fill="white" font-size="28" font-weight="bold">MHS</text>
+            </svg>
+            <div>
+                <h1>Assessment Portal</h1>
+                <p class="subtitle">Mount House School</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Step 1: Enter Access Code -->
+        <div id="step1" class="step active">
+            <div class="step-title">
+                <span class="step-number">1</span>
+                Enter Your Details
+            </div>
+
+            <div id="errorMessage" class="error-message"></div>
+
+            <div class="form-group">
+                <label for="accessCode">Assessment Code</label>
+                <input type="text" id="accessCode" placeholder="Enter the code from your teacher" autocomplete="off">
+            </div>
+
+            <div class="form-group">
+                <label for="studentName">Your Full Name</label>
+                <input type="text" id="studentName" placeholder="e.g., John Smith" autocomplete="off">
+            </div>
+
+            <button class="btn btn-primary" onclick="validateAccess()">
+                Continue
+            </button>
+        </div>
+
+        <!-- Step 2: Download Assessment -->
+        <div id="step2" class="step">
+            <div class="step-title">
+                <span class="step-number">2</span>
+                Download Your Assessment
+            </div>
+
+            <div class="info-card">
+                <h3 id="assessmentTitle">Loading...</h3>
+                <p>Class: <span class="value" id="className">-</span></p>
+                <p>Date: <span class="value" id="assessmentDate">-</span></p>
+                <p>Duration: <span class="value" id="assessmentDuration">-</span></p>
+                <p>Status: <span id="studentStatus" class="status-badge status-pending">Not Started</span></p>
+            </div>
+
+            <div class="instructions">
+                <h4>Instructions:</h4>
+                <ol>
+                    <li>Click the button below to download your assessment</li>
+                    <li>Open the file in Microsoft Word</li>
+                    <li>Complete the assessment</li>
+                    <li>Save your file</li>
+                    <li>Return here to upload your completed work</li>
+                </ol>
+            </div>
+
+            <button class="btn btn-success" onclick="downloadAssessment()" id="downloadBtn">
+                Download My Assessment
+            </button>
+
+            <div class="progress-bar" id="downloadProgress">
+                <div class="progress" id="downloadProgressBar"></div>
+            </div>
+
+            <button class="btn btn-primary" onclick="showStep(3)" id="continueToUploadBtn" style="margin-top: 15px; display: none;">
+                I've Completed My Assessment - Continue to Upload
+            </button>
+        </div>
+
+        <!-- Step 3: Upload Completed Work -->
+        <div id="step3" class="step">
+            <div class="step-title">
+                <span class="step-number">3</span>
+                Upload Completed Work
+            </div>
+
+            <div id="successMessage" class="success-message"></div>
+            <div id="uploadErrorMessage" class="error-message"></div>
+
+            <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+                <div class="upload-icon">📄</div>
+                <p><strong>Click to select your file</strong></p>
+                <p style="font-size: 13px; color: #999;">or drag and drop here</p>
+            </div>
+
+            <input type="file" id="fileInput" accept=".docx,.doc" style="display: none;" onchange="fileSelected(event)">
+
+            <div class="file-selected" id="fileSelectedInfo">
+                <span class="filename" id="selectedFileName"></span>
+                <button onclick="clearFile()" style="float: right; background: none; border: none; cursor: pointer; color: #999;">✕</button>
+            </div>
+
+            <button class="btn btn-success" onclick="uploadSubmission()" id="uploadBtn" disabled>
+                Upload My Work
+            </button>
+
+            <div class="progress-bar" id="uploadProgress">
+                <div class="progress" id="uploadProgressBar"></div>
+            </div>
+        </div>
+
+        <!-- Step 4: Complete -->
+        <div id="step4" class="step">
+            <div style="text-align: center; padding: 20px;">
+                <div style="font-size: 60px; margin-bottom: 20px;">✅</div>
+                <h2 style="color: var(--mhs-green); margin-bottom: 15px;">Submission Complete!</h2>
+                <p style="color: #666; margin-bottom: 20px;">Your assessment has been uploaded successfully.</p>
+
+                <div class="info-card">
+                    <p>Assessment: <span class="value" id="finalAssessmentTitle">-</span></p>
+                    <p>Submitted: <span class="value" id="submissionTime">-</span></p>
+                    <p>Status: <span class="status-badge status-submitted">Submitted</span></p>
+                </div>
+
+                <p style="color: #999; font-size: 13px;">You can close this window now.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Mount House School Assessment System</p>
+    </div>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCZ-TAzBLOpum6eN25fJJi3ZeoqisxaEKQ",
+            authDomain: "mhs-assessments.firebaseapp.com",
+            databaseURL: "https://mhs-assessments-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "mhs-assessments",
+            storageBucket: "mhs-assessments.firebasestorage.app",
+            messagingSenderId: "853600334844",
+            appId: "1:853600334844:web:436588de7e13763811f879"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        const storage = firebase.storage();
+
+        // Global state
+        let currentAssessment = null;
+        let currentStudent = null;
+        let selectedFile = null;
+
+        // Show specific step
+        function showStep(stepNum) {
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+            document.getElementById('step' + stepNum).classList.add('active');
+        }
+
+        // Validate access code and student name
+        async function validateAccess() {
+            const accessCode = document.getElementById('accessCode').value.trim().toUpperCase();
+            const studentName = document.getElementById('studentName').value.trim();
+            const errorDiv = document.getElementById('errorMessage');
+
+            // Validation
+            if (!accessCode) {
+                showError(errorDiv, 'Please enter your access code');
+                return;
+            }
+            if (!studentName) {
+                showError(errorDiv, 'Please enter your full name');
+                return;
+            }
+
+            errorDiv.style.display = 'none';
+
+            try {
+                // Get all assessments and search for the access code
+                const snapshot = await database.ref('assessments').once('value');
+                const assessments = snapshot.val();
+
+                if (!assessments) {
+                    showError(errorDiv, 'No assessments available.');
+                    return;
+                }
+
+                // Search through all assessments for this access code
+                let foundAssessment = null;
+                let foundStudentKey = null;
+                let foundStudentData = null;
+
+                for (const [assessmentId, assessment] of Object.entries(assessments)) {
+                    const students = assessment.students || {};
+
+                    for (const [studentId, studentData] of Object.entries(students)) {
+                        // Match access code AND verify student name
+                        if (studentData.code === accessCode) {
+                            // Check if student name matches (case-insensitive)
+                            if (studentData.name.toLowerCase() === studentName.toLowerCase()) {
+                                foundAssessment = { id: assessmentId, ...assessment };
+                                foundStudentKey = studentId;
+                                foundStudentData = studentData;
+                                break;
+                            } else {
+                                // Code found but name doesn't match
+                                showError(errorDiv, 'The name you entered does not match the code. Please check your name spelling.');
+                                return;
+                            }
+                        }
+                    }
+                    if (foundAssessment) break;
+                }
+
+                if (!foundAssessment) {
+                    showError(errorDiv, 'Invalid access code. Please check with your teacher.');
+                    return;
+                }
+
+                currentAssessment = foundAssessment;
+                currentStudent = { id: foundStudentKey, ...foundStudentData };
+
+                // Check if assessment is active
+                if (currentAssessment.status !== 'active') {
+                    showError(errorDiv, 'This assessment is not currently active.');
+                    return;
+                }
+
+                // Update UI with assessment info
+                document.getElementById('assessmentTitle').textContent = currentAssessment.title;
+                document.getElementById('className').textContent = currentAssessment.class;
+                document.getElementById('assessmentDate').textContent = new Date(currentAssessment.date).toLocaleDateString('en-GB');
+                document.getElementById('assessmentDuration').textContent = currentAssessment.duration + ' minutes';
+
+                // Update status
+                updateStudentStatus();
+
+                // Move to step 2
+                showStep(2);
+
+            } catch (error) {
+                console.error('Error:', error);
+                showError(errorDiv, 'Connection error. Please try again.');
+            }
+        }
+
+        // Update student status display
+        function updateStudentStatus() {
+            const statusBadge = document.getElementById('studentStatus');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const continueBtn = document.getElementById('continueToUploadBtn');
+
+            if (currentStudent.submitted) {
+                statusBadge.textContent = 'Submitted';
+                statusBadge.className = 'status-badge status-submitted';
+                downloadBtn.style.display = 'none';
+                continueBtn.style.display = 'none';
+                // Show already submitted message
+            } else if (currentStudent.downloaded) {
+                statusBadge.textContent = 'Downloaded - In Progress';
+                statusBadge.className = 'status-badge status-downloaded';
+                continueBtn.style.display = 'block';
+            } else {
+                statusBadge.textContent = 'Not Started';
+                statusBadge.className = 'status-badge status-pending';
+            }
+        }
+
+        // Download assessment with personalized header
+        async function downloadAssessment() {
+            const downloadBtn = document.getElementById('downloadBtn');
+            const progressBar = document.getElementById('downloadProgress');
+            const progressEl = document.getElementById('downloadProgressBar');
+
+            downloadBtn.disabled = true;
+            downloadBtn.innerHTML = '<span class="loading-spinner"></span>Preparing your document...';
+            progressBar.style.display = 'block';
+            progressEl.style.width = '20%';
+
+            try {
+                // Get template from Firebase Storage
+                const templateRef = storage.ref(`assessments/${currentAssessment.id}/template.docx`);
+                const templateUrl = await templateRef.getDownloadURL();
+
+                progressEl.style.width = '40%';
+
+                // Download template
+                const response = await fetch(templateUrl);
+                const templateBlob = await response.blob();
+
+                progressEl.style.width = '60%';
+
+                // Personalize the document
+                const personalizedBlob = await personalizeDocument(templateBlob);
+
+                progressEl.style.width = '80%';
+
+                // Trigger download
+                const url = URL.createObjectURL(personalizedBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${currentAssessment.title}_${currentStudent.name.replace(/\s+/g, '_')}.docx`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                progressEl.style.width = '100%';
+
+                // Mark as downloaded in database
+                await database.ref(`assessments/${currentAssessment.id}/students/${currentStudent.id}`).update({
+                    downloaded: true,
+                    downloadedAt: new Date().toISOString()
+                });
+
+                currentStudent.downloaded = true;
+                updateStudentStatus();
+
+                downloadBtn.innerHTML = '✓ Downloaded';
+                downloadBtn.classList.remove('btn-success');
+                downloadBtn.classList.add('btn-primary');
+                document.getElementById('continueToUploadBtn').style.display = 'block';
+
+            } catch (error) {
+                console.error('Download error:', error);
+                downloadBtn.disabled = false;
+                downloadBtn.innerHTML = 'Download My Assessment';
+                progressBar.style.display = 'none';
+                alert('Error downloading assessment. Please try again.');
+            }
+        }
+
+        // Personalize DOCX document with student info in header
+        async function personalizeDocument(blob) {
+            const zip = await JSZip.loadAsync(blob);
+
+            // Student info for header
+            const studentName = currentStudent.name;
+            const className = currentAssessment.className;
+            const assessmentDate = new Date(currentAssessment.date).toLocaleDateString('en-GB');
+            const assessmentTitle = currentAssessment.title;
+
+            // Check if header exists
+            let headerXml = null;
+            if (zip.files['word/header1.xml']) {
+                headerXml = await zip.file('word/header1.xml').async('string');
+            }
+
+            // Create or modify header with student info
+            const headerContent = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+       xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+    <w:p>
+        <w:pPr>
+            <w:pBdr>
+                <w:bottom w:val="single" w:sz="4" w:space="1" w:color="2B5F3F"/>
+            </w:pBdr>
+            <w:tabs>
+                <w:tab w:val="right" w:pos="9360"/>
+            </w:tabs>
+        </w:pPr>
+        <w:r>
+            <w:rPr><w:b/></w:rPr>
+            <w:t>Name: ${escapeXml(studentName)}</w:t>
+        </w:r>
+        <w:r>
+            <w:tab/>
+        </w:r>
+        <w:r>
+            <w:t>Class: ${escapeXml(className)}</w:t>
+        </w:r>
+    </w:p>
+    <w:p>
+        <w:pPr>
+            <w:tabs>
+                <w:tab w:val="right" w:pos="9360"/>
+            </w:tabs>
+        </w:pPr>
+        <w:r>
+            <w:t>Assessment: ${escapeXml(assessmentTitle)}</w:t>
+        </w:r>
+        <w:r>
+            <w:tab/>
+        </w:r>
+        <w:r>
+            <w:t>Date: ${escapeXml(assessmentDate)}</w:t>
+        </w:r>
+    </w:p>
+</w:hdr>`;
+
+            zip.file('word/header1.xml', headerContent);
+
+            // Ensure header is referenced in document.xml.rels
+            let relsContent = '';
+            if (zip.files['word/_rels/document.xml.rels']) {
+                relsContent = await zip.file('word/_rels/document.xml.rels').async('string');
+
+                // Add header relationship if not present
+                if (!relsContent.includes('header1.xml')) {
+                    relsContent = relsContent.replace(
+                        '</Relationships>',
+                        '<Relationship Id="rIdHeader1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>'
+                    );
+                    zip.file('word/_rels/document.xml.rels', relsContent);
+                }
+            }
+
+            // Update document.xml to reference header
+            if (zip.files['word/document.xml']) {
+                let docXml = await zip.file('word/document.xml').async('string');
+
+                // Add header reference to section properties if not present
+                if (!docXml.includes('w:headerReference')) {
+                    docXml = docXml.replace(
+                        /<w:sectPr[^>]*>/,
+                        match => match + '<w:headerReference w:type="default" r:id="rIdHeader1"/>'
+                    );
+                    zip.file('word/document.xml', docXml);
+                }
+            }
+
+            // Update content types
+            if (zip.files['[Content_Types].xml']) {
+                let contentTypes = await zip.file('[Content_Types].xml').async('string');
+                if (!contentTypes.includes('header1.xml')) {
+                    contentTypes = contentTypes.replace(
+                        '</Types>',
+                        '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>'
+                    );
+                    zip.file('[Content_Types].xml', contentTypes);
+                }
+            }
+
+            return await zip.generateAsync({ type: 'blob' });
+        }
+
+        // Escape XML special characters
+        function escapeXml(str) {
+            return str.replace(/&/g, '&amp;')
+                      .replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;')
+                      .replace(/"/g, '&quot;')
+                      .replace(/'/g, '&apos;');
+        }
+
+        // File selection handlers
+        function fileSelected(event) {
+            const file = event.target.files[0];
+            if (file) {
+                if (!file.name.endsWith('.docx') && !file.name.endsWith('.doc')) {
+                    alert('Please select a Word document (.docx or .doc)');
+                    return;
+                }
+                selectedFile = file;
+                document.getElementById('selectedFileName').textContent = file.name;
+                document.getElementById('fileSelectedInfo').style.display = 'block';
+                document.getElementById('uploadArea').style.display = 'none';
+                document.getElementById('uploadBtn').disabled = false;
+            }
+        }
+
+        function clearFile() {
+            selectedFile = null;
+            document.getElementById('fileInput').value = '';
+            document.getElementById('fileSelectedInfo').style.display = 'none';
+            document.getElementById('uploadArea').style.display = 'block';
+            document.getElementById('uploadBtn').disabled = true;
+        }
+
+        // Upload submission
+        async function uploadSubmission() {
+            if (!selectedFile) return;
+
+            const uploadBtn = document.getElementById('uploadBtn');
+            const progressBar = document.getElementById('uploadProgress');
+            const progressEl = document.getElementById('uploadProgressBar');
+            const errorDiv = document.getElementById('uploadErrorMessage');
+
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = '<span class="loading-spinner"></span>Uploading...';
+            progressBar.style.display = 'block';
+            errorDiv.style.display = 'none';
+
+            try {
+                // Upload to Firebase Storage
+                const fileName = `${currentStudent.name.replace(/\s+/g, '_')}_${Date.now()}.docx`;
+                const uploadRef = storage.ref(`submissions/${currentAssessment.id}/${fileName}`);
+
+                const uploadTask = uploadRef.put(selectedFile);
+
+                uploadTask.on('state_changed',
+                    (snapshot) => {
+                        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                        progressEl.style.width = progress + '%';
+                    },
+                    (error) => {
+                        throw error;
+                    }
+                );
+
+                await uploadTask;
+
+                // Get download URL
+                const downloadUrl = await uploadRef.getDownloadURL();
+
+                // Update database
+                await database.ref(`assessments/${currentAssessment.id}/students/${currentStudent.id}`).update({
+                    submitted: true,
+                    submittedAt: new Date().toISOString(),
+                    submissionFile: fileName,
+                    submissionUrl: downloadUrl
+                });
+
+                // Show success
+                document.getElementById('finalAssessmentTitle').textContent = currentAssessment.title;
+                document.getElementById('submissionTime').textContent = new Date().toLocaleString('en-GB');
+
+                showStep(4);
+
+            } catch (error) {
+                console.error('Upload error:', error);
+                showError(errorDiv, 'Error uploading your work. Please try again.');
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = 'Upload My Work';
+                progressBar.style.display = 'none';
+            }
+        }
+
+        // Show error message
+        function showError(element, message) {
+            element.textContent = message;
+            element.style.display = 'block';
+        }
+
+        // Drag and drop handlers
+        const uploadArea = document.getElementById('uploadArea');
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) {
+                document.getElementById('fileInput').files = e.dataTransfer.files;
+                fileSelected({ target: { files: [file] } });
+            }
+        });
+
+        // Enter key handling
+        document.getElementById('accessCode').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') document.getElementById('studentName').focus();
+        });
+
+        document.getElementById('studentName').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') validateAccess();
+        });
+    </script>
+</body>
+</html>
